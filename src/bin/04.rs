@@ -2,9 +2,8 @@ use std::cmp;
 
 pub fn part_one(input: &str) -> Option<u32> {
     let mut accum = 0;
-    let tuple_pairs = format_input(input);
-    for tuple_pair in tuple_pairs {
-        let ((a, b), (x, y)) = tuple_pair;
+    for ((a, b), (x, y)) in format_input(input) {
+        // If (a,b) is within (x,y) or (x,y) is within (a,b)
         if (a >= x && b <= y) || (x >= a && y <= b) {
             accum += 1;
         }
@@ -14,9 +13,8 @@ pub fn part_one(input: &str) -> Option<u32> {
 
 pub fn part_two(input: &str) -> Option<u32> {
     let mut accum = 0;
-    let tuple_pairs = format_input(input);
-    for tuple_pair in tuple_pairs {
-        let ((a, b), (x, y)) = tuple_pair;
+    for ((a, b), (x, y)) in format_input(input) {
+        // If there is any overlap
         if cmp::max(a, x) <= cmp::min(b, y) {
             accum += 1;
         }
@@ -26,7 +24,7 @@ pub fn part_two(input: &str) -> Option<u32> {
 
 pub fn format_input(input: &str) -> Vec<((u32, u32), (u32, u32))> {
     let mut results = Vec::from([]);
-    for assign_pair in input.split('\n') {
+    for assign_pair in input.lines() {
         let pairs: Vec<&str> = assign_pair.split(",").collect();
         let first: Vec<&str> = pairs[0].split("-").collect();
         let second: Vec<&str> = pairs[1].split("-").collect();
