@@ -1,4 +1,4 @@
-use std::{collections::HashSet, hash::Hash};
+use std::collections::HashSet;
 pub fn part_one(input: &str) -> Option<u32> {
     let packs: Vec<&str> = format_input(input).unwrap();
     let mut accum = 0;
