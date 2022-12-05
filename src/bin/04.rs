@@ -27,7 +27,7 @@ pub fn part_two(input: &str) -> Option<u32> {
 pub fn format_input(input: &str) -> Vec<((u32, u32), (u32, u32))> {
     let mut results = Vec::from([]);
     for assign_pair in input.split('\n') {
-        let pairs = assign_pair.split(",").collect::<Vec<&str>>();
+        let pairs: Vec<&str> = assign_pair.split(",").collect();
         let first: Vec<&str> = pairs[0].split("-").collect();
         let second: Vec<&str> = pairs[1].split("-").collect();
         results.push((
