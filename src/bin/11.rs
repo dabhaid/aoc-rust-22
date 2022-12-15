@@ -1,61 +1,70 @@
-pub fn part_one(input: &str) -> Option<u32> {
-    let mut monkeys = parse_input(input).unwrap();
-    let mut inspected: Vec<u32> = vec![0; monkeys.len()];
+pub fn part_one(input: &str) -> Option<u64> {
+    let monkeys = parse_input(input).unwrap();
+    sim_monkey(monkeys, 20, 3.0)
+}
+
+pub fn sim_monkey(mut monkeys: Vec<Monkey>, rounds: u32, divisor: f64) -> Option<u64> {
     let len = monkeys.len();
-    let mut items: Vec<Vec<u32>> = Vec::new();
-    for monkey in &mut monkeys[..] {
-        items.push(monkey.items.clone());
+    let mut cap = 1;
+    for x in 0..monkeys.len() {
+        cap = cap * monkeys[x].divis;
     }
-    for _rounds in 0..20 {
+    for _rounds in 0..rounds {
         for i in 0..len {
-            for j in 0..items[i].len() {
-                inspected[i] += 1;
+            for _j in 0..monkeys[i].items.len() {
+                monkeys[i].inspections += 1;
+                let mut item = monkeys[i].items.pop().unwrap();
                 let operations: Vec<&str> =
                     monkeys[i].operations.split_ascii_whitespace().collect();
-                match operations[1] {
-                    "*" => match operations[2].parse::<u32>() {
-                        Ok(number) => items[i][j] *= number,
-                        Err(E) => items[i][j] *= items[i][j],
+                match operations[3] {
+                    "*" => match operations[4].parse::<u64>() {
+                        Ok(number) => item *= number,
+                        Err(_e) => item *= item,
                     },
-                    "+" => match operations[2].parse::<u32>() {
-                        Ok(number) => items[i][j] += number,
-                        Err(E) => items[i][j] += items[i][j],
+                    "+" => match operations[4].parse::<u64>() {
+                        Ok(number) => item += number,
+                        Err(_e) => item += item,
                     },
                     &_ => (),
                 }
-                match items[i][j] % monkeys[i].divis == 0 {
+                let num: f64 = item as f64 / divisor;
+                item = num.floor() as u64;
+                item = item % cap;
+                match item % monkeys[i].divis == 0 {
                     true => {
-                        let item = items[i].remove(j);
-                        items[monkeys[i].true_throw as usize].push(item);
+                        let next_monkey = monkeys[i].true_throw as usize;
+                        monkeys[next_monkey].items.insert(0, item.to_owned());
                     }
                     false => {
-                        let item = items[i].remove(j);
-                        items[monkeys[i].false_throw as usize].push(item);
+                        let next_monkey = monkeys[i].false_throw as usize;
+                        monkeys[next_monkey].items.insert(0, item.to_owned());
                     }
                 }
             }
         }
+    }
+    let mut inspected: Vec<u64> = vec![0; monkeys.len()];
+    for i in 0..monkeys.len() {
+        inspected.push(monkeys[i].inspections);
     }
     inspected.sort();
     inspected.reverse();
     Some(inspected[0] * inspected[1])
 }
 
-pub fn part_two(input: &str) -> Option<u32> {
-    None
+pub fn part_two(input: &str) -> Option<u64> {
+    let monkeys = parse_input(input).unwrap();
+    sim_monkey(monkeys, 10000, 1.0)
 }
 
 #[derive(Clone)]
 pub struct Monkey {
-    items: Vec<u32>,
+    items: Vec<u64>,
     operations: String,
-    divis: u32,
+    divis: u64,
     true_throw: u32,
     false_throw: u32,
-}
-
-trait Throw {
-    fn throw(&mut self, object: u32, other: &mut Monkey);
+    inspections: u64,
 }
 
 impl Monkey {
@@ -66,6 +75,7 @@ impl Monkey {
             divis: 0,
             true_throw: 0,
             false_throw: 0,
+            inspections: 0,
         }
     }
 }
@@ -74,8 +84,7 @@ pub fn parse_input(input: &str) -> Option<Vec<Monkey>> {
     let mut lines = input.lines();
     let mut line = lines.next();
     let mut monkeys: Vec<Monkey> = Vec::new();
-    let mut items: Vec<Vec<u32>> = Vec::new();
-    let mut monkey = Monkey::new();
+    let mut monkey;
     let mut index = 0;
     while !line.is_none() {
         let l = line.unwrap();
@@ -90,25 +99,28 @@ pub fn parse_input(input: &str) -> Option<Vec<Monkey>> {
                     .unwrap()
                     .0
                     .parse()
-                    .unwrap()
+                    .unwrap();
+                monkeys.push(monkey);
             }
             false => {
                 if l == "" {
-                    break;
+                    line = lines.next();
+                    continue;
                 }
+                let mut monkey = &mut monkeys[index];
                 let (left, right) = l.split_once(":").unwrap();
-                match left {
+                match left.trim() {
                     "Starting items" => {
-                        let str_items = right.split(" ");
+                        let str_items = right.split(", ");
                         for str_item in str_items {
-                            items[index].push(str_item.parse().unwrap());
+                            monkey.items.insert(0, str_item.trim().parse().unwrap())
                         }
                     }
                     "Operation" => {
                         monkey.operations = String::from(right);
                     }
                     "Test" => {
-                        monkey.divis = right.rsplit_once(" ").unwrap().1.parse::<u32>().unwrap()
+                        monkey.divis = right.rsplit_once(" ").unwrap().1.parse::<u64>().unwrap()
                     }
                     "If true" => {
                         monkey.true_throw = right.rsplit_once(" ").unwrap().1.parse().unwrap()
@@ -119,9 +131,9 @@ pub fn parse_input(input: &str) -> Option<Vec<Monkey>> {
 
                     _ => {}
                 }
+                monkeys[index] = monkey.to_owned();
             }
         }
-        monkeys.push(monkey.to_owned());
         line = lines.next();
     }
     Some(monkeys)
@@ -146,6 +158,6 @@ mod tests {
     #[test]
     fn test_part_two() {
         let input = advent_of_code::read_file("examples", 11);
-        assert_eq!(part_two(&input), None);
+        assert_eq!(part_two(&input), Some(2713310158));
     }
 }
