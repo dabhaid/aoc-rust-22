@@ -1,4 +1,4 @@
-use std::cmp::max;
+use std::{cmp::max, collections::HashMap};
 
 use array2d::Array2D;
 
@@ -15,9 +15,14 @@ pub fn part_one(input: &str) -> Option<u32> {
     let mut location = *binding.first().unwrap();
 
     let mut counter = 0;
+    let blobs = blob_detection(&array);
     while location != end {
-        location = decide_next_move(location, &array);
-        print!("{:#?}:{:#?}", location, array.get(location.0, location.1));
+        location = decide_next_move(location, &array, &blobs);
+        print!(
+            "At {:?}:{:#?}\n",
+            location,
+            array.get(location.0, location.1).unwrap()
+        );
         counter += 1;
         if counter == 1000 {
             break;
@@ -28,7 +33,11 @@ pub fn part_one(input: &str) -> Option<u32> {
 
 // prefer to go towards the end
 
-pub fn decide_next_move(location: (usize, usize), array: &Array2D<char>) -> (usize, usize) {
+pub fn decide_next_move(
+    location: (usize, usize),
+    array: &Array2D<char>,
+    blobs: &HashMap<char, Vec<Vec<(usize, usize)>>>,
+) -> (usize, usize) {
     let current_blob = find_in_array(*array.get(location.0, location.1).unwrap(), &array);
     let next_blob = find_in_array(
         next_level(*array.get(location.0, location.1).unwrap()),
@@ -36,20 +45,79 @@ pub fn decide_next_move(location: (usize, usize), array: &Array2D<char>) -> (usi
     );
 
     let target = find_connection(&current_blob, &next_blob).unwrap();
-    let moves = get_next_moves(&location, &(array.column_len(), array.row_len()));
-    let mut distance = vec![0; moves.len()];
+    print!(
+        "target: {:#?}, {:#?}\n",
+        target,
+        array.get(target.0, target.1).unwrap()
+    );
+    let mut moves = get_next_moves(&location, &(array.column_len(), array.row_len()));
+    let mut bad_moves: Vec<usize> = Vec::new();
     for i in 0..moves.len() {
-        distance[i] = get_distance(&moves[i], &target);
+        if !valid_move(
+            *array.get(location.0, location.1).unwrap(),
+            *array.get(moves[i].0, moves[i].1).unwrap(),
+        ) {
+            bad_moves.push(i);
+        }
+    }
+    bad_moves.reverse();
+    for i in bad_moves {
+        moves.remove(i);
+    }
+    let mut distance: Vec<i32> = vec![0; moves.len()];
+    for i in 0..moves.len() {
+        distance[i] = get_distance(&moves[i], &target) as i32;
     }
     let mut min = max(array.column_len(), array.row_len());
     let mut index = 0;
     for i in 0..distance.len() {
-        if distance[i] < min as u32 {
+        if distance[i] < min as i32 {
             min = distance[i] as usize;
             index = i;
         }
     }
     (moves[index].0, moves[index].1)
+}
+
+pub fn valid_move(current: char, next: char) -> bool {
+    if current == next {
+        return true;
+    }
+    if next_level(current) == next {
+        return true;
+    }
+    if current as u32 > next as u32 {
+        return true;
+    }
+    false
+}
+
+pub fn blob_detection(array: &Array2D<char>) -> HashMap<char, Vec<Vec<(usize, usize)>>> {
+    let mut blobs = HashMap::new();
+    for i in 0..array.column_len() {
+        for j in 0..array.row_len() {
+            let char = array.get(i, j).unwrap();
+            if blobs.get(char).is_none() {
+                let mut char_blobs = Vec::new();
+                let mut char_blob = Vec::new();
+                char_blob.push((i, j));
+                char_blobs.push(char_blob);
+                blobs.insert(*char, char_blobs);
+            } else {
+                let char_blobs = blobs.get_mut(char).unwrap();
+                for k in 0..char_blobs.len() {
+                    let char_blob = char_blobs.get_mut(k).unwrap();
+                    if is_connected((i, j), &char_blob) {
+                        char_blob.push((i, j));
+                        continue;
+                    } else {
+                        char_blobs.push(Vec::from([(i, j)]));
+                    }
+                }
+            }
+        }
+    }
+    blobs
 }
 
 pub fn get_next_moves(current: &(usize, usize), bounds: &(usize, usize)) -> Vec<(usize, usize)> {
@@ -73,14 +141,44 @@ pub fn find_connection(
     first: &Vec<(usize, usize)>,
     second: &Vec<(usize, usize)>,
 ) -> Option<(usize, usize)> {
-    for i in first {
-        for j in second {
-            if get_distance(i, j) == 1 {
-                return Some(*j);
-            }
+    for j in second {
+        if is_connected(*j, first) {
+            return Some(*j);
         }
     }
     None
+}
+
+pub fn is_connected(point: (usize, usize), blob: &Vec<(usize, usize)>) -> bool {
+    for bloblet in blob {
+        if get_distance(&point, bloblet) == 1 {
+            return true;
+        }
+    }
+    false
+}
+
+pub fn get_vertical_distance(
+    one: &(usize, usize),
+    two: &(usize, usize),
+    array: &Array2D<char>,
+) -> i32 {
+    let mut start = *array.get(one.0, one.1).unwrap();
+    let mut end = *array.get(two.0, two.1).unwrap();
+
+    if start == 'S' {
+        start = 'a';
+    }
+    if end == 'S' {
+        end = 'a';
+    }
+    if start == 'E' {
+        start = 'z';
+    }
+    if end == 'E' {
+        end = 'z';
+    }
+    return (end as i32 - start as i32);
 }
 
 pub fn get_distance(one: &(usize, usize), two: &(usize, usize)) -> u32 {
