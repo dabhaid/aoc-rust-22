@@ -1,82 +1,41 @@
-use std::{cmp::max, collections::HashMap};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use array2d::Array2D;
 
 pub fn part_one(input: &str) -> Option<u32> {
     let array = parse_input(input);
-    let end_array = find_in_array('E', &array);
-    let end = *end_array.first().unwrap();
 
-    // strategy
-    // try to move towards E
-    //search for the nearest next step up
-
-    let binding = find_in_array('S', &array);
-    let mut location = *binding.first().unwrap();
-
-    let mut counter = 0;
-    let blobs = blob_detection(&array);
-    while location != end {
-        location = decide_next_move(location, &array, &blobs);
-        print!(
-            "At {:?}:{:#?}\n",
-            location,
-            array.get(location.0, location.1).unwrap()
-        );
-        counter += 1;
-        if counter == 1000 {
-            break;
-        }
-    }
-    Some(counter)
+    let path = depth_first_search(&array);
+    print!("{:?}", path);
+    Some(path.unwrap().len() as u32)
 }
 
-// prefer to go towards the end
+pub fn depth_first_search(array: &Array2D<char>) -> Option<Vec<(char, usize)>> {
+    let blobs = get_letter_blobs(array);
+    let mut visited: HashSet<(char, usize)> = HashSet::new();
+    let mut history: Vec<(char, usize)> = Vec::new();
+    let mut queue = VecDeque::new();
+    let mut letters: Vec<char> = Vec::new();
+    // a little cheating, the start is S,0 the end is E,0
+    queue.push_back(('S', 0));
+    let end = ('E', 0);
 
-pub fn decide_next_move(
-    location: (usize, usize),
-    array: &Array2D<char>,
-    blobs: &HashMap<char, Vec<Vec<(usize, usize)>>>,
-) -> (usize, usize) {
-    let current_blob = find_in_array(*array.get(location.0, location.1).unwrap(), &array);
-    let next_blob = find_in_array(
-        next_level(*array.get(location.0, location.1).unwrap()),
-        &array,
-    );
+    while let Some(current_location) = queue.pop_back() {
+        history.push(current_location);
+        if current_location == end {
+            return Some(history);
+        }
 
-    let target = find_connection(&current_blob, &next_blob).unwrap();
-    print!(
-        "target: {:#?}, {:#?}\n",
-        target,
-        array.get(target.0, target.1).unwrap()
-    );
-    let mut moves = get_next_moves(&location, &(array.column_len(), array.row_len()));
-    let mut bad_moves: Vec<usize> = Vec::new();
-    for i in 0..moves.len() {
-        if !valid_move(
-            *array.get(location.0, location.1).unwrap(),
-            *array.get(moves[i].0, moves[i].1).unwrap(),
-        ) {
-            bad_moves.push(i);
+        let neighbor_blobs: Vec<(char, usize)> = get_neighbor_blobs(&blobs, current_location);
+
+        for neighbor in neighbor_blobs {
+            if visited.insert(neighbor) {
+                queue.push_back(neighbor);
+                letters.push(neighbor.0);
+            }
         }
     }
-    bad_moves.reverse();
-    for i in bad_moves {
-        moves.remove(i);
-    }
-    let mut distance: Vec<i32> = vec![0; moves.len()];
-    for i in 0..moves.len() {
-        distance[i] = get_distance(&moves[i], &target) as i32;
-    }
-    let mut min = max(array.column_len(), array.row_len());
-    let mut index = 0;
-    for i in 0..distance.len() {
-        if distance[i] < min as i32 {
-            min = distance[i] as usize;
-            index = i;
-        }
-    }
-    (moves[index].0, moves[index].1)
+    None
 }
 
 pub fn valid_move(current: char, next: char) -> bool {
@@ -92,32 +51,116 @@ pub fn valid_move(current: char, next: char) -> bool {
     false
 }
 
-pub fn blob_detection(array: &Array2D<char>) -> HashMap<char, Vec<Vec<(usize, usize)>>> {
-    let mut blobs = HashMap::new();
-    for i in 0..array.column_len() {
-        for j in 0..array.row_len() {
-            let char = array.get(i, j).unwrap();
-            if blobs.get(char).is_none() {
-                let mut char_blobs = Vec::new();
-                let mut char_blob = Vec::new();
-                char_blob.push((i, j));
-                char_blobs.push(char_blob);
-                blobs.insert(*char, char_blobs);
-            } else {
-                let char_blobs = blobs.get_mut(char).unwrap();
-                for k in 0..char_blobs.len() {
-                    let char_blob = char_blobs.get_mut(k).unwrap();
-                    if is_connected((i, j), &char_blob) {
-                        char_blob.push((i, j));
-                        continue;
-                    } else {
-                        char_blobs.push(Vec::from([(i, j)]));
-                    }
+pub type Point = (usize, usize);
+pub type BlobIndex = HashMap<char, Vec<Vec<Point>>>;
+pub type BlobAddress = (char, usize);
+
+pub fn get_letter_blobs(array: &Array2D<char>) -> BlobIndex {
+    let mut array_copy = array.clone().to_owned();
+    let mut hashmap: HashMap<char, Vec<Vec<Point>>> = HashMap::new();
+    for i in 0..array_copy.column_len() {
+        for j in 0..array_copy.row_len() {
+            if *array_copy.get(i, j).unwrap() != ' ' {
+                let label = array_copy.get(i, j).unwrap().clone();
+                let blob = destructive_flood_fill(&mut array_copy, (i, j));
+                if !hashmap.contains_key(&label) {
+                    hashmap.insert(label, vec![blob]);
+                } else {
+                    hashmap.get_mut(&label).unwrap().push(blob);
                 }
             }
         }
     }
-    blobs
+    hashmap
+}
+
+// Flood-fill algorithm for finding blobs
+// Destroys the array it searches over
+pub fn destructive_flood_fill(array: &mut Array2D<char>, coord: Point) -> Vec<Point> {
+    let mut blob: Vec<Point> = Vec::new();
+    let mut queue: Vec<Point> = Vec::new();
+    let label = array.get(coord.0, coord.1).unwrap().clone();
+
+    queue.push(coord);
+
+    while let Some(point) = queue.pop() {
+        blob.push(point);
+        let neighbors = get_neighbors(&array, point, &label);
+        for neighbor in neighbors {
+            queue.push(neighbor);
+            array.set(neighbor.0, neighbor.1, ' ').ok();
+        }
+    }
+    return blob;
+}
+
+pub fn get_neighbor_blobs(blobs: &BlobIndex, current_location: BlobAddress) -> Vec<BlobAddress> {
+    let (level, blob) = current_location;
+    let next_level = next_level(level);
+    let previous_level = prev_level(level);
+    let current_blob = &blobs.get(&level).unwrap()[blob];
+    let uplevel_blobs = blobs.get(&next_level).unwrap();
+    let downlevel_blobs = blobs.get(&previous_level).unwrap();
+    let mut neighbors: Vec<BlobAddress> = Vec::new();
+
+    for i in 0..uplevel_blobs.len() {
+        match find_connection(&current_blob, &uplevel_blobs[i]) {
+            Some(_x) => neighbors.push((next_level, i)),
+            None => (),
+        }
+    }
+    for i in 0..downlevel_blobs.len() {
+        match find_connection(&current_blob, &downlevel_blobs[i]) {
+            Some(_x) => neighbors.push((previous_level, i)),
+            None => (),
+        }
+    }
+    // dirt hack
+    if (level == 'r') {
+        let l2_blobs = blobs.get(&prev_level(previous_level)).unwrap();
+        for i in 0..l2_blobs.len() {
+            match find_connection(&current_blob, &l2_blobs[i]) {
+                Some(_x) => neighbors.push((prev_level(previous_level), i)),
+                None => (),
+            }
+        }
+    }
+    neighbors
+}
+
+pub fn get_neighbors(
+    array: &Array2D<char>,
+    point: (usize, usize),
+    label: &char,
+) -> Vec<(usize, usize)> {
+    let mut neighbors: Vec<(usize, usize)> = Vec::new();
+
+    let cols = array.row_len();
+    let rows = array.column_len();
+    if point.0 + 1 < rows {
+        if array.get(point.0 + 1, point.1).unwrap() == label {
+            neighbors.push((point.0 + 1, point.1));
+        }
+    }
+    // North
+    if point.0 as i32 - 1 > 0 {
+        if array.get(point.0 - 1, point.1).unwrap() == label {
+            neighbors.push((point.0 - 1, point.1));
+        }
+    }
+
+    if point.1 + 1 < cols {
+        if array.get(point.0, point.1 + 1).unwrap() == label {
+            neighbors.push((point.0, point.1 + 1));
+        }
+    }
+    // West
+    if (point.1 as i32) - 1 > 0 {
+        if array.get(point.0, point.1 - 1).unwrap() == label {
+            neighbors.push((point.0, point.1 - 1));
+        }
+    }
+    neighbors
 }
 
 pub fn get_next_moves(current: &(usize, usize), bounds: &(usize, usize)) -> Vec<(usize, usize)> {
@@ -178,7 +221,7 @@ pub fn get_vertical_distance(
     if end == 'E' {
         end = 'z';
     }
-    return (end as i32 - start as i32);
+    end as i32 - start as i32
 }
 
 pub fn get_distance(one: &(usize, usize), two: &(usize, usize)) -> u32 {
@@ -192,6 +235,15 @@ pub fn next_level(current: char) -> char {
         'S' => 'a',
         'z' => 'E',
         _ => char::from_u32(current as u32 + 1).unwrap(),
+    }
+}
+
+pub fn prev_level(current: char) -> char {
+    match current {
+        'S' => 'S', // hack
+        'a' => 'S',
+        'E' => 'z',
+        _ => char::from_u32(current as u32 - 1).unwrap(),
     }
 }
 
